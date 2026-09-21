@@ -1,0 +1,50 @@
+# ============================================================
+# GOLD LAYER - DIMENSION: GEOGRAPHY
+# Creates the geography dimension with surrogate keys,
+# ready to be  used for analytics and reporting.
+# ============================================================
+
+
+
+from logger import logging
+import duckdb
+from pathlib import Path
+db_path = Path.cwd() / "product_analytics_light.duckdb"
+
+
+
+
+# -------------- Dimension Geography ----------------------- #
+try:
+    con = duckdb.connect(str(db_path))
+    logging.info("Database Connection Successful.")
+    print("Database Connection Successful.")
+
+    
+
+    con.execute("""
+    CREATE OR REPLACE TABLE gold__dim_geography AS
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY country_code) AS GeographyKey,
+        country_code AS CountryCode,
+        country_name AS CountryName,
+        region       AS Region,
+        market       AS Market,
+        sales_region AS SalesRegion,
+        currency     AS Currency
+    FROM silver__geography
+    ORDER BY GeographyKey;
+    """)
+
+    print("gold__dim_geography created successfully.")
+    logging.info("gold__dim_geography created successfully.")
+    
+
+
+    con.close()
+   
+except Exception as e:
+    logging.error(f"Failed to create dimension geography: {e}")
+    raise
+
+
