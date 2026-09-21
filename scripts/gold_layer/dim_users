@@ -1,0 +1,55 @@
+# ============================================================
+# GOLD LAYER - DIMENSION: USERS
+# Creates the user dimension with surrogate keys,
+# ready to be used for analytics and reporting.
+# ============================================================
+
+
+
+from logger import logging
+import duckdb
+from pathlib import Path
+db_path = Path.cwd() / "product_analytics_light.duckdb"
+
+
+
+# -------------- Dimension Users ----------------------- #
+try:
+    con = duckdb.connect(str(db_path))
+    logging.info("Database Connection Successful.")
+    print("Database Connection Successful.")
+
+
+    con.execute("""
+    CREATE OR REPLACE TABLE gold__dim_users AS
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY user_id) AS UserKey,
+        user_id              AS UserId,
+        account_id           AS AccountId,
+        
+        full_name            AS FullName,
+        email_domain         AS EmailDomain,
+        job_role             AS JobRole,
+        user_status          AS UserStatus,
+        
+        is_active_user       AS IsActiveUser,
+        is_admin             AS IsAdmin,
+        
+        created_at           AS CreatedAt,
+        created_date         AS CreatedDate,
+        last_seen_at         AS LastSeenAt,
+        
+        user_tenure_days     AS UserTenureDays,
+        days_since_last_seen AS DaysSinceLastSeen,
+        recency_bucket       AS RecencyBucket
+    FROM silver__users
+    ORDER BY UserKey;
+    """)
+    print("gold__dim_users created successfully.")
+    logging.info("gold__dim_users created successfully.")
+
+    con.close()
+
+except Exception as e:
+    logging.error(f"Failed to create dimension users: {e}")
+    raise
