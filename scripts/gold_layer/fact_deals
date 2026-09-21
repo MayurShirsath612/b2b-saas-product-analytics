@@ -1,0 +1,71 @@
+# ============================================================
+# GOLD LAYER - FACT: DEALS
+# Creates the deals fact table by linking deal records to
+# dimension tables through surrogate foreign keys.
+# ============================================================
+
+
+from logger import logging
+import duckdb
+from pathlib import Path
+db_path = Path.cwd() / "product_analytics_light.duckdb"
+
+# -------------- Dimension Geography ----------------------- #
+try:
+    con = duckdb.connect(str(db_path))
+    logging.info("Database Connection Successful.")
+    print("Database Connection Successful.")
+
+    
+    
+    con.execute("""
+    CREATE OR REPLACE TABLE gold__fact_deals AS
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY d.deal_id) AS DealKey,
+        d.deal_id               AS DealId,
+        
+        -- Foreign Surrogate Keys mapping to dimensions
+        COALESCE(a.AccountKey, -1)     AS AccountKey,
+        COALESCE(u.UserKey, -1)        AS OwnerUserKey,
+        COALESCE(g.GeographyKey, -1)   AS GeographyKey,
+
+        d.pipeline_id           AS PipelineId,
+        d.current_stage_id      AS StageId,
+        d.status                AS Status,
+
+        d.created_at            AS CreatedAt,
+        d.created_date          AS CreatedDate,
+        d.closed_at             AS ClosedAt,
+        d.closed_date           AS ClosedDate,
+
+        d.last_stage_changed_at     AS LastStageChangedAt,
+        d.last_stage_changed_date   AS LastStageChangedDate,
+
+        d.amount                AS DealAmount,
+        d.currency              AS Currency,
+        d.country_code          AS CountryCode,
+        d.source_system         AS SourceSystem,
+
+        d.is_closed             AS IsClosed,
+        d.is_won                AS IsWon,
+
+        d.deal_cycle_days       AS DealCycleDays,
+        d.deal_age_days         AS DealAgeDays
+    FROM silver__deals d
+    LEFT JOIN gold__dim_accounts a ON d.account_id = a.AccountId
+    LEFT JOIN gold__dim_users u ON d.owner_user_id = u.UserId
+    LEFT JOIN gold__dim_geography g ON d.country_code = g.CountryCode
+    ORDER BY DealKey;
+    """)
+    
+    
+    print("gold__fact_deals created successfully.")
+    logging.info("gold__fact_deals created successfully.")
+
+    con.close()
+   
+except Exception as e:
+    logging.error(f"Failed to create fact deals: {e}")
+    raise
+
+
