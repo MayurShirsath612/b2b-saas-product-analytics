@@ -1,0 +1,64 @@
+# ============================================================
+# GOLD LAYER - FACT: PRODUCTS EVENTS
+# Creates the products fact table containing product-level
+# activity and measures used for product performance analysis.
+# ============================================================
+
+
+from logger import logging
+import duckdb
+from pathlib import Path
+db_path = Path.cwd() / "product_analytics_light.duckdb"
+
+# -------------- Fact Products ----------------------- #
+
+try:
+    con = duckdb.connect(str(db_path))
+    logging.info("Database Connection Successful.")
+    print("Database Connection Successful.")
+
+        
+    con.execute("""
+    CREATE OR REPLACE TABLE gold__fact_product_events AS
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY pe.event_id) AS EventKey,
+        pe.event_id         AS EventId,
+
+        -- Foreign Surrogate Keys mapping to dimensions/facts
+        COALESCE(a.AccountKey, -1)   AS AccountKey,
+        COALESCE(u.UserKey, -1)      AS UserKey,
+        COALESCE(d.DealKey, -1)      AS DealKey,
+        COALESCE(g.GeographyKey, -1) AS GeographyKey,
+
+        pe.event_name        AS EventName,
+        pe.event_category    AS EventCategory,
+        pe.has_deal_context  AS HasDealContext,
+
+        pe.event_timestamp   AS EventTimestamp,
+        pe.event_ts_date     AS EventDate,
+        pe.event_ts_month    AS EventMonth,
+
+        pe.platform          AS Platform,
+        pe.device_type       AS DeviceType,
+        pe.app_version       AS AppVersion,
+        pe.country_code      AS CountryCode,
+
+        pe.source_system     AS SourceSystem
+    FROM silver__product_events pe
+    LEFT JOIN gold__dim_accounts a ON pe.account_id = a.AccountId
+    LEFT JOIN gold__dim_users u ON pe.user_id = u.UserId
+    LEFT JOIN gold__fact_deals d ON pe.deal_id = d.DealId
+    LEFT JOIN gold__dim_geography g ON pe.country_code = g.CountryCode
+    ORDER BY EventKey;
+    """)
+
+    print("gold__fact_product_events created successfully.")
+    logging.info("gold__fact_product_events created successfully.")
+
+  
+
+    con.close()
+
+except Exception as e:
+    logging.error(f"Failed to create fact products: {e}")
+    raise
