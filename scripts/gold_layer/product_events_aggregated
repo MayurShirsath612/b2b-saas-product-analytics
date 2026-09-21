@@ -1,0 +1,60 @@
+# ============================================================
+# GOLD LAYER - FACT: PRODUCT EVENTS AGGREGATED
+# Creates the product events fact table containing event-level
+# activity used for product and behavioral analysis.
+# ============================================================
+
+
+
+from logger import logging
+import duckdb
+from pathlib import Path
+db_path = Path.cwd() / "product_analytics_light.duckdb"
+
+try:
+    con = duckdb.connect(str(db_path))
+    logging.info("Database Connection Successful.")
+    print("Database Connection Successful.")
+
+     
+
+    # -------------- Fact Product Events Agg ----------------------- #
+    con.execute("""
+    CREATE OR REPLACE TABLE gold__fact_product_events_aggregated AS
+    SELECT
+        ROW_NUMBER() OVER (ORDER BY pe.event_ts_date, pe.event_name, a.AccountKey) AS AggregateEventKey,
+        pe.event_ts_date     AS EventDate,
+        pe.event_name        AS EventName,
+        pe.event_category    AS EventCategory,
+        
+        COALESCE(a.AccountKey, -1) AS AccountKey,
+        pe.account_id        AS AccountId,
+
+        COUNT(*)             AS EventCount,
+        COUNT(DISTINCT pe.user_id) AS UniqueUsers
+    FROM silver__product_events pe
+    LEFT JOIN gold__dim_accounts a ON pe.account_id = a.AccountId
+    GROUP BY 
+        pe.event_ts_date,
+        pe.event_name,
+        pe.event_category,
+        a.AccountKey,
+        pe.account_id
+    ORDER BY 
+        EventDate,
+        EventName,
+        AccountKey;
+    """)
+
+    print("gold__fact_product_events_aggregated created successfully.")
+    logging.info("gold__fact_product_events_aggregated created successfully.")
+
+
+        
+
+    con.close()
+
+
+except Exception as e:
+    logging.error(f"Failed to create fact product events: {e}")
+    raise
