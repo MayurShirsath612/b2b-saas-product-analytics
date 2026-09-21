@@ -1,0 +1,171 @@
+from logger import logging
+import duckdb
+from pathlib import Path
+
+db_path = Path.cwd() / "product_analytics_light.duckdb"
+
+try:
+    con = duckdb.connect(str(db_path))
+
+    logging.info("Database Connection Successful.")
+    print("Database Connection Successful.")
+
+    # -------------- Fact Activation ----------------------- #
+
+    con.execute("""
+    CREATE OR REPLACE TABLE gold__fact_activation2 AS
+
+    WITH accounts AS (
+
+        SELECT
+            AccountKey,
+            AccountId,
+            CAST(CreatedDate AS DATE) AS CreatedDate
+        FROM gold__dim_accounts
+
+    ),
+
+    core_events AS (
+
+        SELECT
+            a.AccountKey,
+            MIN(CAST(e.EventDate AS DATE)) AS FirstCoreEventDate,
+            COUNT(*) AS CoreEventsInFirst14Days
+
+        FROM gold__fact_product_events e
+
+        JOIN accounts a
+            ON e.AccountKey = a.AccountKey
+
+        WHERE e.HasDealContext = TRUE
+          AND CAST(e.EventDate AS DATE)
+              BETWEEN a.CreatedDate
+              AND (a.CreatedDate + INTERVAL 14 DAY)
+
+        GROUP BY 1
+
+    ),
+
+    deals AS (
+
+        SELECT
+            a.AccountKey,
+            MIN(CAST(d.CreatedDate AS DATE)) AS FirstDealDate,
+            COUNT(*) AS DealsInFirst14Days
+
+        FROM gold__fact_deals d
+
+        JOIN accounts a
+            ON d.AccountKey = a.AccountKey
+
+        WHERE CAST(d.CreatedDate AS DATE)
+              BETWEEN a.CreatedDate
+              AND (a.CreatedDate + INTERVAL 14 DAY)
+
+        GROUP BY 1
+
+    )
+
+    SELECT
+
+        ROW_NUMBER() OVER (
+            ORDER BY a.AccountKey
+        ) AS ActivationKey,
+
+        a.AccountKey,
+        a.AccountId,
+        a.CreatedDate,
+
+        e.FirstCoreEventDate,
+        d.FirstDealDate,
+
+        -- Activation occurs when either activation signal is observed
+        CASE
+            WHEN e.FirstCoreEventDate IS NOT NULL
+                 AND d.FirstDealDate IS NOT NULL
+            THEN GREATEST(
+                e.FirstCoreEventDate,
+                d.FirstDealDate
+            )
+
+            WHEN e.FirstCoreEventDate IS NOT NULL
+            THEN e.FirstCoreEventDate
+
+            WHEN d.FirstDealDate IS NOT NULL
+            THEN d.FirstDealDate
+
+            ELSE NULL
+        END AS ActivationDate,
+
+        -- Activated when either signal is present
+        CASE
+            WHEN e.FirstCoreEventDate IS NOT NULL
+                 OR d.FirstDealDate IS NOT NULL
+            THEN TRUE
+            ELSE FALSE
+        END AS IsActivated,
+
+        -- Days from signup to first activation signal
+        CASE
+            WHEN e.FirstCoreEventDate IS NOT NULL
+                 AND d.FirstDealDate IS NOT NULL
+            THEN DATE_DIFF(
+                'day',
+                a.CreatedDate,
+                LEAST(
+                    e.FirstCoreEventDate,
+                    d.FirstDealDate
+                )
+            )
+
+            WHEN e.FirstCoreEventDate IS NOT NULL
+            THEN DATE_DIFF(
+                'day',
+                a.CreatedDate,
+                e.FirstCoreEventDate
+            )
+
+            WHEN d.FirstDealDate IS NOT NULL
+            THEN DATE_DIFF(
+                'day',
+                a.CreatedDate,
+                d.FirstDealDate
+            )
+
+            ELSE NULL
+        END AS TimeToValueDays,
+
+        COALESCE(
+            e.CoreEventsInFirst14Days,
+            0
+        ) AS CoreEventsInFirst14Days,
+
+        COALESCE(
+            d.DealsInFirst14Days,
+            0
+        ) AS DealsInFirst14Days
+
+    FROM accounts a
+
+    LEFT JOIN core_events e
+        ON a.AccountKey = e.AccountKey
+
+    LEFT JOIN deals d
+        ON a.AccountKey = d.AccountKey
+
+    ORDER BY ActivationKey;
+
+    """)
+
+    print("gold__fact_activation2 created successfully.")
+    logging.info(
+        "gold__fact_activation2 created successfully."
+    )
+
+    con.close()
+
+except Exception as e:
+    logging.error(
+        f"Failed to create fact activation: {e}"
+    )
+    raise
